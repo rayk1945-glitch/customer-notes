@@ -281,6 +281,19 @@
   #shareEditBox .row { display: flex; gap: 8px; }
   #shareEditBox input { flex: 1; }
   #shareEditMsg { margin-top: 10px; }
+  /* PIN recovery + Account (v10) */
+  .linkbtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; border: 0; background: none;
+             color: var(--accent); font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 10px; }
+  #forgotBox h2, #accountView h2.t { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+  #forgotBox .primary { margin-top: 18px; }
+  .code { letter-spacing: .35em; font-variant-numeric: tabular-nums; font-size: 20px; }
+  @media (max-width: 430px) { .who-name { display: none; } .who .pill { padding: 0 10px; } }
+  #accountView { max-width: 640px; margin: 0 auto; padding: 16px 14px 60px; }
+  #accountView .row { display: flex; gap: 8px; }
+  #accountView .row input, #accountView .row select { flex: 1; min-width: 0; }
+  #accountView .msg { margin-top: 10px; margin-bottom: 0; }
+  .bigcode { font-size: 36px; font-weight: 800; letter-spacing: .2em; font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
   .share-edit label[for=enteredBy], .share-edit #enteredBy, .share-edit #enteredByHint { display: none !important; }
 </style>
 </head>
@@ -291,6 +304,7 @@
       <h1>Customer Notes</h1>
       <div id="who" class="who hidden">
         <span id="whoName" class="who-name"></span>
+        <button id="accountBtn" type="button" class="pill">Account</button>
         <button id="signOutBtn" type="button" class="pill">Sign out</button>
       </div>
     </div>
@@ -318,11 +332,82 @@
       <div id="pin2Wrap" class="hidden">
         <label class="f" for="authPin2">PIN again</label>
         <input id="authPin2" class="pin" name="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="new-password">
+        <label class="f" for="authEmail">Email <span class="req">*</span></label>
+        <input id="authEmail" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="254" placeholder="you@example.com">
+        <p class="hint">Only used to send you a code if you forget your PIN. Nobody else sees it.</p>
       </div>
       <button id="authBtn" class="primary" type="submit">Sign in</button>
+      <div id="forgotLinkWrap" class="auth-links"><button id="forgotLink" type="button" class="linkbtn">Forgot PIN?</button></div>
       <div id="authMsg" class="msg" role="status" aria-live="polite"></div>
     </form>
   </div>
+
+  <!-- Forgot PIN: 1) send a code by email  2) code + new PIN -->
+  <div id="forgotBox" class="card hidden">
+    <h2 id="forgotTitle">Forgot PIN</h2>
+    <form id="forgotSendForm" novalidate>
+      <p class="hint" style="margin-top:0">Enter your name. If your account has an email, we'll send a 6-digit code to it.</p>
+      <label class="f" for="fpName">Name</label>
+      <input id="fpName" autocomplete="username" autocapitalize="words" maxlength="30" placeholder="e.g. Ray">
+      <button id="fpSendBtn" class="primary" type="submit">Send code</button>
+      <div class="auth-links">
+        <button id="fpHaveCode" type="button" class="linkbtn">I have a code</button>
+        <button type="button" class="linkbtn fpBack">Back to sign in</button>
+      </div>
+    </form>
+    <form id="forgotResetForm" class="hidden" novalidate>
+      <p class="hint" style="margin-top:0">Enter the 6-digit code (from your email, or from the admin) and pick a new PIN. Your notes stay the same.</p>
+      <label class="f" for="fpName2">Name</label>
+      <input id="fpName2" autocomplete="username" autocapitalize="words" maxlength="30" placeholder="e.g. Ray">
+      <label class="f" for="fpCode">6-digit code</label>
+      <input id="fpCode" class="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code">
+      <label class="f" for="fpPin">New PIN (4 to 10 digits)</label>
+      <input id="fpPin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="new-password">
+      <label class="f" for="fpPin2">New PIN again</label>
+      <input id="fpPin2" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="new-password">
+      <button id="fpResetBtn" class="primary" type="submit">Reset PIN and sign in</button>
+      <div class="auth-links">
+        <button id="fpNeedCode" type="button" class="linkbtn">Send me a code</button>
+        <button type="button" class="linkbtn fpBack">Back to sign in</button>
+      </div>
+    </form>
+    <div id="fpMsg" class="msg" role="status" aria-live="polite" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- Account: own email; admin PIN reset tool -->
+<section id="accountView" class="hidden" aria-labelledby="accountTitle">
+  <div class="card">
+    <h2 id="accountTitle" class="t">Account</h2>
+    <p class="hint" style="margin-top:0">Signed in as <strong id="acctName"></strong></p>
+    <form id="emailForm" novalidate>
+      <label class="f" for="acctEmail">Your email (for PIN reset codes)</label>
+      <div class="row">
+        <input id="acctEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="254" placeholder="you@example.com">
+        <button id="acctEmailBtn" type="submit" class="pill">Save</button>
+      </div>
+      <p class="hint">Private to you. Used only to send a code if you forget your PIN.</p>
+      <div id="acctEmailMsg" class="msg" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+  <div id="adminCard" class="card hidden">
+    <h2 class="t">Reset a user's PIN</h2>
+    <p class="hint" style="margin-top:0">Makes a one-time 6-digit code (works for 24 hours). Read it to the person. They tap <strong>Forgot PIN?</strong> then <strong>I have a code</strong>, and pick a new PIN. Their notes stay the same.</p>
+    <form id="adminForm" novalidate>
+      <label class="f" for="adminUser">Account</label>
+      <div class="row">
+        <select id="adminUser"><option value="">Loading...</option></select>
+        <button id="adminCodeBtn" type="submit" class="pill">Make code</button>
+      </div>
+      <div id="adminOut" class="hidden" style="margin-top:12px">
+        <div class="hint" id="adminOutFor"></div>
+        <div class="bigcode" id="adminOutCode"></div>
+        <div class="hint" id="adminOutExp"></div>
+      </div>
+      <div id="adminMsg" class="msg" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+  <button id="acctDone" type="button" class="primary">Done</button>
 </section>
 
 <!-- Read-only shared note (?s=...) -->
@@ -400,7 +485,7 @@
         <div class="sec-h"><h2>Photos</h2><span class="count" id="photoCount"></span></div>
         <label class="pill filebtn" id="photoBtn">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-          <span>Take photo or upload</span>
+          <span>Take photo or upload (pick several)</span>
           <input id="photos" type="file" accept="image/*" multiple aria-label="Take photo or upload">
         </label>
         <div id="thumbs" class="thumbs"></div>
@@ -675,20 +760,39 @@ function previewHtml(p, alt) {
   return p.data ? '<img src="' + esc(p.data) + '" alt="' + esc(alt) + '">' : '<span class="ph-tile">photo</span>';
 }
 
+// Many photos at once: each is downscaled one at a time (keeps phone memory low) and added as its own photo,
+// up to MAX_PHOTOS; extras or unreadable files are skipped with a short message.
+var addingPhotos = false;
 $('photos').addEventListener('change', function (e) {
-  var files = Array.prototype.slice.call(e.target.files || []);
-  var room = MAX_PHOTOS - photoData.length;
-  if (files.length > room) {
-    showMsg('Only ' + MAX_PHOTOS + ' photos per note. Extra photos were skipped.', false);
-    files = files.slice(0, Math.max(room, 0));
-  }
-  Promise.all(files.map(downscale)).then(function (urls) {
-    photoData = photoData.concat(urls.map(function (d) { return { data: d, url: '' }; }));
-    renderThumbs();
-  }).catch(function (err) {
-    showMsg(err.message, false);
-  });
+  var picked = Array.prototype.slice.call(e.target.files || []);
   e.target.value = '';
+  if (!picked.length) return;
+  if (addingPhotos) { toast('Still adding the last photos...'); return; }
+  var room = Math.max(MAX_PHOTOS - photoData.length, 0);
+  var files = picked.slice(0, room);
+  var extra = picked.length - files.length;
+  if (!files.length) { showMsg('Only ' + MAX_PHOTOS + ' photos per note. No more photos were added.', false); return; }
+  addingPhotos = true;
+  var added = 0, bad = 0, i = 0;
+  function next() {
+    if (i >= files.length) {
+      addingPhotos = false;
+      renderThumbs();
+      var parts = [];
+      if (extra > 0) parts.push(extra + ' photo' + (extra === 1 ? ' was' : 's were') + ' skipped (max ' + MAX_PHOTOS + ' per note).');
+      if (bad > 0) parts.push(bad + ' photo' + (bad === 1 ? '' : 's') + ' could not be read.');
+      if (parts.length) showMsg('Added ' + added + ' photo' + (added === 1 ? '' : 's') + '. ' + parts.join(' '), false);
+      else if (files.length > 1) toast('Added ' + added + ' photos');
+      return;
+    }
+    if (files.length > 1) $('photoCount').textContent = 'Adding ' + (i + 1) + ' of ' + files.length + '...';
+    var f = files[i++];
+    downscale(f).then(function (d) {
+      if (photoData.length < MAX_PHOTOS) { photoData.push({ data: d, url: '' }); added++; } else { extra++; }
+      renderThumbs();
+    }, function () { bad++; }).then(next);
+  }
+  next();
 });
 
 function renderThumbs() {
@@ -697,6 +801,7 @@ function renderThumbs() {
       '<button type="button" class="xbtn" data-i="' + i + '" aria-label="Remove photo ' + (i + 1) + '"><span>&times;</span></button></div>';
   }).join('');
   $('photoCount').textContent = photoData.length ? photoData.length + ' / ' + MAX_PHOTOS : '';
+  if (addingPhotos) return;
   var full = photoData.length >= MAX_PHOTOS;
   $('photos').disabled = full;
   $('photoBtn').style.opacity = full ? '.5' : '';
@@ -1155,6 +1260,7 @@ $('noteForm').addEventListener('submit', function (e) {
   var name = $('name').value.trim();
   if (!name) { showMsg('Customer name is required.', false); $('name').focus(); return; }
   if (recState) { showMsg('Stop the voice recording first, then save.', false); return; }
+  if (addingPhotos) { showMsg('Photos are still being added. Wait a moment, then save.', false); return; }
   var tooBig = clips.filter(function (c) { return !c.url && c.blob && c.blob.size > MAX_AUDIO_BYTES; });
   if (tooBig.length) { showMsg('A voice note is larger than 8 MB. Remove it (record shorter clips) and save again.', false); return; }
 
@@ -1514,11 +1620,12 @@ function setAuthMode(m) {
   $('authInTab').classList.toggle('active', !up); $('authInTab').setAttribute('aria-selected', String(!up));
   $('authUpTab').classList.toggle('active', up); $('authUpTab').setAttribute('aria-selected', String(up));
   $('pin2Wrap').classList.toggle('hidden', !up);
+  $('forgotLinkWrap').classList.toggle('hidden', up);
   $('authPin').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
   $('authBtn').textContent = up ? 'Create account' : 'Sign in';
   $('authTitle').textContent = up ? 'Create account' : 'Sign in';
   $('authLead').textContent = up
-    ? 'Pick a name (2 to 30 letters, numbers or spaces) and a 4 to 10 digit PIN. Your notes are private to your account.'
+    ? 'Pick a name (2 to 30 letters, numbers or spaces), a 4 to 10 digit PIN and your email. Your notes are private to your account.'
     : 'Sign in with your name and PIN. Your notes are private to your account.';
   authMsg('', true);
 }
@@ -1533,9 +1640,11 @@ $('authUpTab').addEventListener('click', function () { setAuthMode('up'); });
   $(id).addEventListener('input', function () { var v = this.value.replace(/\D/g, '').slice(0, 10); if (v !== this.value) this.value = v; });
 });
 
+var EMAIL_RE = /^[^\s@<>()\[\]",;:\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
 function showApp() {
   document.body.classList.remove('shared-only');
   $('authView').classList.add('hidden');
+  $('accountView').classList.add('hidden');
   $('sharedView').classList.add('hidden');
   $('appMain').classList.remove('hidden');
   $('tabs').classList.remove('hidden');
@@ -1544,6 +1653,8 @@ function showApp() {
 }
 function showAuth(msg) {
   $('appMain').classList.add('hidden');
+  $('accountView').classList.add('hidden');
+  showForgot(false);
   $('tabs').classList.add('hidden');
   $('who').classList.add('hidden');
   $('authView').classList.remove('hidden');
@@ -1571,6 +1682,10 @@ $('authForm').addEventListener('submit', function (e) {
   if (authMode === 'up') {
     if ($('authPin2').value !== pin) { authMsg('The two PINs do not match.', false); $('authPin2').focus(); return; }
     payload.pin2 = $('authPin2').value;
+    var em = $('authEmail').value.trim();
+    if (!em) { authMsg('Email is required, so you can reset your PIN if you forget it.', false); $('authEmail').focus(); return; }
+    if (em.length > 254 || !EMAIL_RE.test(em)) { authMsg('That email does not look right. Check it and try again.', false); $('authEmail').focus(); return; }
+    payload.email = em;
   }
   var btn = $('authBtn');
   var label = btn.textContent;
@@ -1581,19 +1696,177 @@ $('authForm').addEventListener('submit', function (e) {
   api(authMode === 'up' ? 'signup' : 'signin', payload).then(function (res) {
     btn.disabled = false;
     btn.textContent = label;
-    var prev = $('whoName').textContent;
-    session = { token: res.token, name: res.name, expires: res.expires };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    $('authPin').value = ''; $('authPin2').value = '';
-    var e = $('enteredBy');
-    if (!e.value.trim() || e.value.trim() === prev) e.value = session.name;
-    showApp();
-    if (res.legacyAssigned) toast(res.legacyAssigned + ' older note(s) moved into your account');
-    if (!$('viewRecent').classList.contains('hidden')) loadRecent();
+    $('authPin').value = ''; $('authPin2').value = ''; $('authEmail').value = '';
+    signedIn(res);
   }).catch(function (err) {
     btn.disabled = false;
     btn.textContent = label;
     authMsg(err.message, false);
+  });
+});
+
+// After sign in / sign up / PIN reset: keep the session and open the app.
+function signedIn(res, msg) {
+  var prev = $('whoName').textContent;
+  session = { token: res.token, name: res.name, expires: res.expires, isAdmin: !!res.isAdmin };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  var e = $('enteredBy');
+  if (!e.value.trim() || e.value.trim() === prev) e.value = session.name;
+  showApp();
+  if (msg) toast(msg);
+  else if (res.legacyAssigned) toast(res.legacyAssigned + ' older note(s) moved into your account');
+  else if (res.hasEmail === false) toast('Tip: add your email in Account, in case you forget your PIN');
+  if (!$('viewRecent').classList.contains('hidden')) loadRecent();
+}
+
+// ---- Forgot PIN (email code, or a code from the admin) ----
+function fpMsg(text, ok) { var m = $('fpMsg'); m.textContent = text; m.className = text ? 'msg ' + (ok ? 'ok' : 'err') : 'msg'; }
+function showForgot(on, step) {
+  var authCard = $('authForm').closest('.card');
+  authCard.classList.toggle('hidden', !!on);
+  $('forgotBox').classList.toggle('hidden', !on);
+  if (!on) return;
+  var reset = step === 'code';
+  $('forgotSendForm').classList.toggle('hidden', reset);
+  $('forgotResetForm').classList.toggle('hidden', !reset);
+  $('forgotTitle').textContent = reset ? 'Reset your PIN' : 'Forgot PIN';
+  var nm = $('authName').value.replace(/\s+/g, ' ').trim();
+  if (nm && !$('fpName').value) $('fpName').value = nm;
+  if (reset && !$('fpName2').value) $('fpName2').value = $('fpName').value;
+  (reset ? ($('fpName2').value ? $('fpCode') : $('fpName2')) : $('fpName')).focus();
+}
+$('forgotLink').addEventListener('click', function () { fpMsg('', true); showForgot(true, 'send'); });
+$('fpHaveCode').addEventListener('click', function () { fpMsg('', true); showForgot(true, 'code'); });
+$('fpNeedCode').addEventListener('click', function () { fpMsg('', true); showForgot(true, 'send'); });
+Array.prototype.forEach.call(document.querySelectorAll('.fpBack'), function (b) {
+  b.addEventListener('click', function () { fpMsg('', true); showForgot(false); setAuthMode('in'); });
+});
+['fpCode', 'fpPin', 'fpPin2'].forEach(function (id) {
+  var max = id === 'fpCode' ? 6 : 10;
+  $(id).addEventListener('input', function () { var v = this.value.replace(/\D/g, '').slice(0, max); if (v !== this.value) this.value = v; });
+});
+$('forgotSendForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var name = $('fpName').value.replace(/\s+/g, ' ').trim();
+  if (!NAME_RE.test(name)) { fpMsg('Enter your name (2 to 30 letters, numbers or spaces).', false); $('fpName').focus(); return; }
+  var b = $('fpSendBtn');
+  b.disabled = true; b.textContent = 'Sending...';
+  fpMsg('', true);
+  api('forgotPin', { name: name }).then(function (res) {
+    b.disabled = false; b.textContent = 'Send code';
+    $('fpName2').value = name;
+    showForgot(true, 'code');
+    fpMsg((res && res.message) || 'If that account has an email, a code was sent. Otherwise ask the admin.', true);
+  }).catch(function (err) {
+    b.disabled = false; b.textContent = 'Send code';
+    fpMsg(err.message, false);
+  });
+});
+$('forgotResetForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var name = $('fpName2').value.replace(/\s+/g, ' ').trim();
+  var code = $('fpCode').value.replace(/\D/g, '');
+  var pin = $('fpPin').value, pin2 = $('fpPin2').value;
+  if (!NAME_RE.test(name)) { fpMsg('Enter your name as you signed up with it.', false); $('fpName2').focus(); return; }
+  if (!/^\d{6}$/.test(code)) { fpMsg('Enter the 6-digit code.', false); $('fpCode').focus(); return; }
+  if (!PIN_RE.test(pin)) { fpMsg('New PIN must be 4 to 10 digits.', false); $('fpPin').focus(); return; }
+  if (pin2 !== pin) { fpMsg('The two PINs do not match.', false); $('fpPin2').focus(); return; }
+  var b = $('fpResetBtn');
+  b.disabled = true; b.textContent = 'Resetting...';
+  fpMsg('', true);
+  session = null;
+  api('resetPin', { name: name, code: code, pin: pin, pin2: pin2 }).then(function (res) {
+    b.disabled = false; b.textContent = 'Reset PIN and sign in';
+    ['fpCode', 'fpPin', 'fpPin2', 'authPin'].forEach(function (id) { $(id).value = ''; });
+    fpMsg('', true);
+    showForgot(false);
+    setAuthMode('in');
+    signedIn(res, 'PIN changed. Other devices were signed out.');
+  }).catch(function (err) {
+    b.disabled = false; b.textContent = 'Reset PIN and sign in';
+    fpMsg(err.message, false);
+  });
+});
+
+// ---- Account: own email; admin "Reset a user's PIN" ----
+function boxMsg(id, text, ok) { var m = $(id); m.textContent = text; m.className = text ? 'msg ' + (ok ? 'ok' : 'err') : 'msg'; }
+$('accountBtn').addEventListener('click', function () {
+  if (saving) { toast('Wait for the save to finish.'); return; }
+  $('appMain').classList.add('hidden');
+  $('tabs').classList.add('hidden');
+  $('accountView').classList.remove('hidden');
+  $('acctName').textContent = session ? session.name : '';
+  boxMsg('acctEmailMsg', '', true); boxMsg('adminMsg', '', true);
+  $('adminOut').classList.add('hidden');
+  $('acctEmail').value = '';
+  $('acctEmail').placeholder = 'Loading...';
+  window.scrollTo(0, 0);
+  api('account', {}).then(function (a) {
+    $('acctEmail').placeholder = 'you@example.com';
+    $('acctEmail').value = a.email || '';
+    if (!a.email) boxMsg('acctEmailMsg', 'No email yet. Add one so you can reset your PIN if you forget it.', false);
+    session.isAdmin = !!a.isAdmin;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    $('adminCard').classList.toggle('hidden', !a.isAdmin);
+    if (a.isAdmin) loadAdminUsers();
+  }).catch(function (err) {
+    $('acctEmail').placeholder = 'you@example.com';
+    if (!err.auth) boxMsg('acctEmailMsg', err.message, false);
+  });
+});
+$('acctDone').addEventListener('click', function () {
+  $('adminOutCode').textContent = '';
+  $('adminOut').classList.add('hidden');
+  $('accountView').classList.add('hidden');
+  $('appMain').classList.remove('hidden');
+  $('tabs').classList.remove('hidden');
+  window.scrollTo(0, 0);
+});
+$('emailForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var em = $('acctEmail').value.trim();
+  if (!em || em.length > 254 || !EMAIL_RE.test(em)) { boxMsg('acctEmailMsg', 'That email does not look right. Check it and try again.', false); $('acctEmail').focus(); return; }
+  var b = $('acctEmailBtn');
+  b.disabled = true;
+  api('setEmail', { email: em }).then(function (r) {
+    b.disabled = false;
+    $('acctEmail').value = r.email;
+    boxMsg('acctEmailMsg', 'Email saved.', true);
+  }).catch(function (err) {
+    b.disabled = false;
+    if (!err.auth) boxMsg('acctEmailMsg', err.message, false);
+  });
+});
+function loadAdminUsers() {
+  var sel = $('adminUser');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  api('adminUsers', {}).then(function (list) {
+    sel.innerHTML = '<option value="">Pick an account</option>' + list.map(function (u) {
+      return '<option value="' + esc(u.name) + '">' + esc(u.name) + (u.locked ? ' (locked)' : '') + (u.hasEmail ? '' : ' (no email)') + '</option>';
+    }).join('');
+  }).catch(function (err) {
+    sel.innerHTML = '<option value="">Could not load accounts</option>';
+    if (!err.auth) boxMsg('adminMsg', err.message, false);
+  });
+}
+$('adminForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var who = $('adminUser').value;
+  if (!who) { boxMsg('adminMsg', 'Pick an account first.', false); return; }
+  if (!confirm('Make a PIN reset code for "' + who + '"?')) return;
+  var b = $('adminCodeBtn');
+  b.disabled = true;
+  boxMsg('adminMsg', '', true);
+  $('adminOut').classList.add('hidden');
+  api('adminResetCode', { username: who }).then(function (r) {
+    b.disabled = false;
+    $('adminOutFor').textContent = 'Reset code for ' + r.name + ':';
+    $('adminOutCode').textContent = r.code;
+    $('adminOutExp').textContent = 'Works once, until ' + r.expiresText + '. A newer code replaces it.';
+    $('adminOut').classList.remove('hidden');
+  }).catch(function (err) {
+    b.disabled = false;
+    if (!err.auth) boxMsg('adminMsg', err.message, false);
   });
 });
 
@@ -1610,6 +1883,8 @@ $('signOutBtn').addEventListener('click', function () {
   resetForm();
   clearMsg();
   renderList([], '');
+  $('adminOutCode').textContent = '';
+  $('acctEmail').value = '';
   $('authName').value = '';
   setAuthMode('in');
   showAuth('');
