@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Customer Notes</title>
 <meta name="theme-color" content="#f4f5f7">
@@ -281,6 +284,7 @@
   #shareEditBox .row { display: flex; gap: 8px; }
   #shareEditBox input { flex: 1; }
   #shareEditMsg { margin-top: 10px; }
+  .ver { font-size: 12px; font-weight: 600; color: var(--muted); background: #e6e9ee; border-radius: 999px; padding: 2px 8px; vertical-align: 3px; letter-spacing: 0; }
   /* PIN recovery + Account (v10) */
   .linkbtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; border: 0; background: none;
              color: var(--accent); font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
@@ -301,7 +305,7 @@
 <header>
   <div class="head-in">
     <div class="head-row">
-      <h1>Customer Notes</h1>
+      <h1>Customer Notes <span class="ver" title="App version">v11</span></h1>
       <div id="who" class="who hidden">
         <span id="whoName" class="who-name"></span>
         <button id="accountBtn" type="button" class="pill">Account</button>
@@ -543,16 +547,32 @@ var session = (function () {
   try { var s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); return s && s.token ? s : null; } catch (e) { return null; }
 })();
 
-function api(action, data) {
+// Every call has a time limit (default 60 s; voice uploads 120 s), so the page can never wait forever.
+// A timeout or lost connection rejects with err.retryable = true (safe callers retry once).
+var API_TIMEOUT_MS = 60000;
+function api(action, data, timeoutMs) {
   var body = {};
   for (var k in (data || {})) body[k] = data[k];
   body.action = action;
   if (session && session.token) body.token = session.token;
-  return fetch(API_URL, {
+  var ms = timeoutMs || API_TIMEOUT_MS;
+  var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  var timedOut = false, timer;
+  var limit = new Promise(function (_, reject) {
+    timer = setTimeout(function () {
+      timedOut = true;
+      if (ctl) ctl.abort();
+      var e = new Error('The server did not answer within ' + Math.round(ms / 1000) + ' seconds.');
+      e.retryable = true; e.timeout = true;
+      reject(e);
+    }, ms);
+  });
+  var req = fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body),
-    redirect: 'follow'
+    redirect: 'follow',
+    signal: ctl ? ctl.signal : undefined
   }).then(function (resp) {
     return resp.text().then(function (t) {
       var j;
@@ -566,13 +586,26 @@ function api(action, data) {
       return j.data;
     });
   }, function () {
-    throw new Error('No connection to the server. Check your internet and try again.');
+    var e = new Error(timedOut ? 'The server did not answer in time.' : 'No connection to the server. Check your internet and try again.');
+    e.retryable = true;
+    throw e;
+  });
+  return Promise.race([req, limit]).then(function (v) { clearTimeout(timer); return v; },
+    function (err) { clearTimeout(timer); throw err; });
+}
+
+/** api() that retries once after a timeout / lost connection (only for calls that are safe to repeat). */
+function apiRetry(action, data, timeoutMs, onRetry) {
+  return api(action, data, timeoutMs).catch(function (err) {
+    if (!err || !err.retryable) throw err;
+    if (onRetry) onRetry();
+    return api(action, data, timeoutMs);
   });
 }
 
 var MAX_PHOTOS = 5;
 var MAX_SIDE = 1280;
-var JPEG_QUALITY = 0.75;
+var JPEG_QUALITY = 0.7;
 var MAX_NOTES = 20;
 var MAX_ITEMS = 50;
 var MAX_CLIPS = 40;
@@ -827,7 +860,7 @@ function addItemRow(it) {
   row.innerHTML = '<select class="cat" aria-label="Category">' + opts + '</select>' +
     '<input class="desc" maxlength="500" placeholder="Style / color / size" aria-label="Item description">' +
     '<button type="button" class="pill ph" aria-label="Take photo or upload">' + ICON_CAM + '<span>Photo / Upload</span></button>' +
-    '<input type="file" class="phfile" accept="image/*" tabindex="-1" aria-hidden="true">' +
+    '<input type="file" class="phfile" accept="image/*" multiple tabindex="-1" aria-hidden="true">' +
     '<button type="button" class="xbtn rm" aria-label="Remove item">' + ICON_X + '</button>' +
     '<div class="ithumb"></div>';
   if (it) {
@@ -883,15 +916,42 @@ $('items').addEventListener('click', function (e) {
     if (!$('items').children.length) addItemRow(); else updateItemsUi();
   }
 });
+// Quote-line photo: one photo per line. If several are picked, the first goes on this line and each extra one
+// gets its own new line right below (same category, description left blank to fill in), up to MAX_ITEMS lines.
+var itemPhotoJobs = 0;
 $('items').addEventListener('change', function (e) {
   if (!e.target.classList || !e.target.classList.contains('phfile')) return;
-  var row = e.target.closest('.item'), file = e.target.files && e.target.files[0];
+  var row = e.target.closest('.item');
+  var files = Array.prototype.slice.call(e.target.files || []);
   e.target.value = '';
-  if (!file) return;
-  downscale(file).then(function (d) {
-    row._photo = { data: d, url: '' };
-    renderItemPhoto(row);
-  }).catch(function (err) { showMsg(err.message, false); });
+  if (!files.length) return;
+  itemPhotoJobs++;
+  var after = row, added = 0, bad = 0, skipped = 0, i = 0;
+  function next() {
+    if (i >= files.length) {
+      itemPhotoJobs--;
+      var parts = [];
+      if (skipped) parts.push(skipped + ' photo' + (skipped === 1 ? ' was' : 's were') + ' skipped (max ' + MAX_ITEMS + ' quote lines).');
+      if (bad) parts.push(bad + ' photo' + (bad === 1 ? '' : 's') + ' could not be read.');
+      if (parts.length) showMsg(parts.join(' '), false);
+      else if (added > 1) toast(added + ' photos added, one per quote line');
+      return;
+    }
+    var f = files[i++];
+    downscale(f).then(function (d) {
+      var target = row;
+      if (added > 0) {
+        target = addItemRow({ category: row.querySelector('.cat').value, description: '' });
+        if (!target) { skipped++; return; }
+        after.parentNode.insertBefore(target, after.nextSibling);
+      }
+      target._photo = { data: d, url: '' };
+      renderItemPhoto(target);
+      after = target;
+      added++;
+    }, function () { bad++; }).then(next);
+  }
+  next();
 });
 resetItems();
 
@@ -1196,6 +1256,7 @@ $('cancelEdit').addEventListener('click', function () {
 // ---- Save / Update ----
 function resetForm(keepMsg) {
   editId = null;
+  saveReqId = '';
   ['name', 'phone', 'email', 'address'].forEach(function (id) { $(id).value = ''; });
   setStatus('open');
   store = localStorage.getItem('esStore') || '';
@@ -1214,17 +1275,18 @@ function resetForm(keepMsg) {
 function runServer(fn, args) {
   if (shareEdit) {   // editing through a share link: uploads + save go through the edit session
     switch (fn) {
-      case 'uploadPhoto': return api('uploadPhoto', { editToken: shareEdit.editToken, data: args[0], mimeType: args[1], nameHint: args[2] });
-      case 'uploadAudio': return api('uploadAudio', { editToken: shareEdit.editToken, data: args[0], mimeType: args[1], nameHint: args[2] });
-      case 'updateNote': return api('shareUpdate', { editToken: shareEdit.editToken, note: args[1] });
+      case 'uploadPhoto': return apiRetry('uploadPhoto', { editToken: shareEdit.editToken, data: args[0], mimeType: args[1], nameHint: args[2] }, 0, args[3]);
+      case 'uploadAudio': return apiRetry('uploadAudio', { editToken: shareEdit.editToken, data: args[0], mimeType: args[1], nameHint: args[2] }, 120000, args[3]);
+      case 'updateNote': return apiRetry('shareUpdate', { editToken: shareEdit.editToken, note: args[1] }, 0, args[2]);
     }
     return Promise.reject(new Error('Not available while editing a shared note.'));
   }
   switch (fn) {
-    case 'uploadPhoto': return api('uploadPhoto', { data: args[0], mimeType: args[1], nameHint: args[2] });
-    case 'uploadAudio': return api('uploadAudio', { data: args[0], mimeType: args[1], nameHint: args[2] });
-    case 'saveNote': return api('save', { note: args[0] });
-    case 'updateNote': return api('update', { id: args[0], note: args[1] });
+    case 'uploadPhoto': return apiRetry('uploadPhoto', { data: args[0], mimeType: args[1], nameHint: args[2] }, 0, args[3]);
+    case 'uploadAudio': return apiRetry('uploadAudio', { data: args[0], mimeType: args[1], nameHint: args[2] }, 120000, args[3]);
+    // save carries a request id (payload.reqId), so a retry after a timeout never makes a second row
+    case 'saveNote': return apiRetry('save', { note: args[0] }, 0, args[1]);
+    case 'updateNote': return apiRetry('update', { id: args[0], note: args[1] }, 0, args[2]);
     case 'deleteNote': return api('delete', { id: args[0] });
     case 'recentNotes': return api('recent', { n: args[0] });
     case 'searchNotes': return api('search', { q: args[0] });
@@ -1232,35 +1294,47 @@ function runServer(fn, args) {
   return Promise.reject(new Error('Unknown call ' + fn));
 }
 
-// Upload photos and voice clips one at a time (keeps each call small). Already-uploaded ones are reused on retry.
+// Upload photos and voice clips, up to UPLOAD_CONCURRENCY at once (each is its own small call).
+// Already-uploaded ones (url set) are skipped, so edits and retries never upload the same file twice.
 // list items: photo {data, url} or clip {blob, mime, url} (clips have .blob).
-function uploadAll(list, nameHint, onProgress) {
+var UPLOAD_CONCURRENCY = 3;
+function uploadAll(list, nameHint, onProgress, onRetry) {
   var pending = list.filter(function (p) { return !p.url; });
-  var i = 0;
-  function next() {
-    if (i >= pending.length) return Promise.resolve();
-    var p = pending[i];
-    onProgress(i + 1, pending.length);
+  var total = pending.length, done = 0, next = 0, failed = null;
+  if (!total) return Promise.resolve();
+  onProgress(0, total);
+  function worker() {
+    if (failed || next >= total) return Promise.resolve();
+    var p = pending[next++];
     var call = p.blob
-      ? blobToDataUrl(p.blob).then(function (d) { return runServer('uploadAudio', [d, p.mime || p.blob.type, nameHint + ' voice']); })
-      : runServer('uploadPhoto', [p.data, 'image/jpeg', nameHint]);
+      ? blobToDataUrl(p.blob).then(function (d) { return runServer('uploadAudio', [d, p.mime || p.blob.type, nameHint + ' voice', onRetry]); })
+      : runServer('uploadPhoto', [p.data, 'image/jpeg', nameHint, onRetry]);
     return call.then(function (url) {
       p.url = url;
-      i++;
-      return next();
-    });
+      done++;
+      onProgress(done, total);
+      return worker();
+    }, function (err) { failed = failed || err; throw err; });
   }
-  return next();
+  var workers = [];
+  for (var w = 0; w < Math.min(UPLOAD_CONCURRENCY, total); w++) workers.push(worker());
+  return Promise.all(workers);
 }
 
 var saving = false;
+var saveReqId = '';   // one id per new note, kept across retries so the server saves it only once
+function newReqId() {
+  var a = new Uint8Array(16);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+}
 $('noteForm').addEventListener('submit', function (e) {
   e.preventDefault();
   if (saving) return;
   var name = $('name').value.trim();
   if (!name) { showMsg('Customer name is required.', false); $('name').focus(); return; }
   if (recState) { showMsg('Stop the voice recording first, then save.', false); return; }
-  if (addingPhotos) { showMsg('Photos are still being added. Wait a moment, then save.', false); return; }
+  if (addingPhotos || itemPhotoJobs) { showMsg('Photos are still being added. Wait a moment, then save.', false); return; }
   var tooBig = clips.filter(function (c) { return !c.url && c.blob && c.blob.size > MAX_AUDIO_BYTES; });
   if (tooBig.length) { showMsg('A voice note is larger than 8 MB. Remove it (record shorter clips) and save again.', false); return; }
 
@@ -1290,13 +1364,17 @@ $('noteForm').addEventListener('submit', function (e) {
       showMsg('NOT saved yet: please sign in again. Your entry is kept; tap ' + (isEdit ? 'Update' : 'Save') + ' again after signing in.', false);
       return;
     }
-    showMsg('NOT saved: ' + text + ' Your entry is still on screen; check your connection and tap ' + (isEdit ? 'Update' : 'Save') + ' again.', false);
+    showMsg('NOT saved: ' + text + ' Your entry is still on screen; check your connection and tap ' + (isEdit ? 'Update' : 'Save') + ' again' +
+      (err && err.retryable ? ' (photos already uploaded are kept, and it will not save twice).' : '.'), false);
   }
 
+  if (!isEdit && !saveReqId) saveReqId = newReqId();
+  var reqId = saveReqId;
+  function onRetry() { showMsg('Slow connection, trying again…', true); }
   uploadAll(uploads, name, function (n, total) {
-    btn.textContent = 'Uploading ' + n + ' of ' + total + '…';
-    showMsg('Uploading ' + n + ' of ' + total + '…', true);
-  }).then(function () {
+    btn.textContent = 'Uploading ' + Math.min(n + 1, total) + ' of ' + total + '…';
+    showMsg(n < total ? 'Uploading ' + (total > 1 ? 'photos/voice: ' + n + ' of ' + total + ' done…' : '1 of 1…') : 'Uploaded ' + total + ' of ' + total + '. Saving…', true);
+  }, onRetry).then(function () {
     btn.textContent = isEdit ? 'Updating...' : 'Saving...';
     var payload = {
       name: name,
@@ -1319,10 +1397,12 @@ $('noteForm').addEventListener('submit', function (e) {
       }),
       enteredBy: enteredBy
     };
-    return isEdit ? runServer('updateNote', [editId, payload]) : runServer('saveNote', [payload]);
+    if (!isEdit) payload.reqId = reqId;
+    return isEdit ? runServer('updateNote', [editId, payload, onRetry]) : runServer('saveNote', [payload, onRetry]);
   }).then(function (res) {
     saving = false;
     btn.disabled = false;
+    saveReqId = '';
     if (shareEdit) { finishShareEdit(res); return; }
     resetForm();
     showMsg((res.updated ? 'Updated: ' : 'Saved: ') + res.name + ' (' + res.timestamp + ')' +
