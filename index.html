@@ -109,14 +109,24 @@
   }
 
   /* Quote items */
-  .item { display: grid; grid-template-columns: 1fr auto 44px; grid-template-areas: "cat ph rm" "desc desc desc" "sg sg sg" "th th th";
+  /* v14 line: [search bar] [x] / [note] [Photo / Upload] / matches / photos */
+  .item { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px; grid-template-areas: "qs qs rm" "sg sg sg" "nt ph ph" "th th th";
           gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fafbfc; }
   .item + .item { margin-top: 10px; }
-  .item select { grid-area: cat; }
-  .item input.desc { grid-area: desc; }
+  .item .qs { grid-area: qs; position: relative; min-width: 0; }
+  .item .qs svg.mag { position: absolute; left: 12px; top: 50%; margin-top: -10px; width: 20px; height: 20px; color: #6b7280; pointer-events: none; }
+  .item .qs input.desc { width: 100%; padding-left: 40px; padding-right: 48px; font-size: 17px; min-height: 50px; border-radius: 12px; background: #fff; }
+  .item .qs input.desc::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .item .qx { position: absolute; right: 5px; top: 50%; margin-top: -20px; width: 40px; height: 40px; border: 0; border-radius: 999px;
+              background: #e6e9ee; color: #374151; font-size: 20px; line-height: 1; cursor: pointer; padding: 0; }
+  .item .qx[hidden] { display: none; }
+  .item input.inote { grid-area: nt; min-width: 0; }
   .item input[type=file] { display: none; }
-  .item .ph { grid-area: ph; padding: 0 12px; }
-  .item .rm { grid-area: rm; }
+  .item .ph { grid-area: ph; padding: 0 12px; white-space: nowrap; }
+  .item .rm { grid-area: rm; align-self: center; }
+  .item .ithumb .pimg { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .sg .opt.has-img { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 10px; align-items: center; }
+  .sg .opt .oimg { grid-row: span 2; width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #eef0f3; }
   /* Item search suggestions (v13) */
   .item .sg { grid-area: sg; background: #fff; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden;
               box-shadow: 0 6px 18px rgba(16, 24, 40, .10); max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -136,8 +146,12 @@
   .item .ithumb { grid-area: th; display: flex; align-items: center; gap: 10px; }
   .item .ithumb:empty { display: none; }
   @media (min-width: 600px) {
-    .item { grid-template-columns: 140px 1fr auto 44px; grid-template-areas: "cat desc ph rm" "sg sg sg sg" "th th th th"; }
+    .item { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto 44px; grid-template-areas: "qs nt ph rm" "sg sg sg sg" "th th th th"; }
   }
+  /* saved card: item line */
+  ul.items .it-item { font-weight: 700; }
+  ul.items .it-note { display: block; font-size: 15px; color: #4b5563; margin-top: 2px; }
+  ul.items .pthumb img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: #eef0f3; display: block; }
 
   /* Photo thumbs (form) */
   .thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
@@ -321,7 +335,7 @@
 <header>
   <div class="head-in">
     <div class="head-row">
-      <h1>Customer Notes <span class="ver" title="App version">v13</span></h1>
+      <h1>Customer Notes <span class="ver" title="App version">v14</span></h1>
       <div id="who" class="who hidden">
         <span id="whoName" class="who-name"></span>
         <button id="accountBtn" type="button" class="pill">Account</button>
@@ -864,39 +878,53 @@ $('thumbs').addEventListener('click', function (e) {
 });
 renderThumbs();
 
-// ---- Quote items (1..50 rows: Category + Description + optional photo) ----
+// ---- Quote items (v14: 1..50 lines of [search bar: item # / name or free text] + [short note] + optional photo) ----
+// A line picked from item search also carries the item's public product photo (row._img) when the floor app has one.
 var sgSeq = 0;
+var ICON_MAG = '<svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+var ITEM_IMG_RE = /^https:\/\/rayk1945-glitch\.github\.io\/east-star-floor\/photos\/[A-Za-z0-9._-]+\.(?:jpe?g|png|webp)$/;
+// Saved line -> what the search bar shows. v14 lines have .item; older lines are "Category – description" (Other dropped).
+function lineItemText(it) {
+  if (it.item != null) return it.item;
+  var d = it.description != null ? it.description : (it.text || '');
+  return it.category && it.category !== 'Other' ? it.category + (d ? ' \u2013 ' + d : '') : d;
+}
 function addItemRow(it) {
   var box = $('items');
   if (box.children.length >= MAX_ITEMS) return null;
   var row = document.createElement('div');
   row.className = 'item';
   row._photo = null; // {data, url}
-  var opts = '<option value="">Category</option>' + CATEGORIES.map(function (c) {
-    return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
-  }).join('');
-  row.innerHTML = '<select class="cat" aria-label="Category">' + opts + '</select>' +
-    '<input class="desc" maxlength="500" placeholder="Item # or name (or type anything)" aria-label="Item description" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sg' + (++sgSeq) + '">' +
+  row._img = '';     // product photo URL from item search
+  row.innerHTML = '<div class="qs">' + ICON_MAG +
+      '<input class="desc" type="search" enterkeyhint="search" maxlength="500" placeholder="Search: matte black faucet, 12x24 white, 15714\u2026" aria-label="Item: search by item # or name, or type anything" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sg' + (++sgSeq) + '">' +
+      '<button type="button" class="qx" aria-label="Clear item" hidden>\u00d7</button></div>' +
+    '<button type="button" class="xbtn rm" aria-label="Remove line">' + ICON_X + '</button>' +
     '<div class="sg" id="sg' + sgSeq + '" role="listbox" aria-label="Matching items"></div>' +
+    '<input class="inote" maxlength="300" placeholder="Note: color, qty, room\u2026" aria-label="Note for this item" autocomplete="off">' +
     '<button type="button" class="pill ph" aria-label="Take photo or upload">' + ICON_CAM + '<span>Photo / Upload</span></button>' +
     '<input type="file" class="phfile" accept="image/*" multiple tabindex="-1" aria-hidden="true">' +
-    '<button type="button" class="xbtn rm" aria-label="Remove item">' + ICON_X + '</button>' +
     '<div class="ithumb"></div>';
   if (it) {
-    row.querySelector('.cat').value = it.category || '';
-    row.querySelector('.desc').value = it.description || '';
+    row.querySelector('.desc').value = lineItemText(it);
+    row.querySelector('.inote').value = it.note || '';
     if (it.photo) row._photo = { data: thumbUrl(it.photo), url: it.photo };
+    if (it.img && ITEM_IMG_RE.test(it.img)) { row._img = it.img; row._picked = row.querySelector('.desc').value.replace(/\s+/g, ' ').trim(); }
   }
   box.appendChild(row);
   renderItemPhoto(row);
+  syncClear(row);
   updateItemsUi();
   return row;
 }
 
+function syncClear(row) { row.querySelector('.qx').hidden = !row.querySelector('.desc').value; }
+
 function renderItemPhoto(row) {
   row.querySelector('.ph span').textContent = row._photo ? 'Change' : 'Photo / Upload';
-  row.querySelector('.ithumb').innerHTML = row._photo ? previewHtml(row._photo, 'Item photo') +
-    '<button type="button" class="pill phrm">Remove photo</button>' : '';
+  row.querySelector('.ithumb').innerHTML =
+    (row._img ? '<span class="pimg"><img src="' + esc(row._img) + '" alt="Product photo" loading="lazy">Product photo</span>' : '') +
+    (row._photo ? previewHtml(row._photo, 'Item photo') + '<button type="button" class="pill phrm">Remove photo</button>' : '');
 }
 
 function updateItemsUi() {
@@ -911,18 +939,18 @@ function resetItems() {
   addItemRow();
 }
 
-// Item rows that have a description or a photo (others are skipped).
+// Item rows that have an item, a note or a photo (others are skipped).
 function filledItemRows() {
   var rows = $('items').querySelectorAll('.item'), out = [];
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i].querySelector('.desc').value.trim() || rows[i]._photo) out.push(rows[i]);
+    if (rows[i].querySelector('.desc').value.trim() || rows[i].querySelector('.inote').value.trim() || rows[i]._photo) out.push(rows[i]);
   }
   return out;
 }
 
 $('addItem').addEventListener('click', function () {
   var row = addItemRow();
-  if (row) row.querySelector('.cat').focus();
+  if (row) row.querySelector('.desc').focus();
 });
 $('items').addEventListener('click', function (e) {
   var t = e.target.closest && e.target.closest('button');
@@ -930,13 +958,20 @@ $('items').addEventListener('click', function (e) {
   if (!row) return;
   if (t.classList.contains('ph')) { row.querySelector('.phfile').click(); return; }
   if (t.classList.contains('phrm')) { row._photo = null; renderItemPhoto(row); return; }
+  if (t.classList.contains('qx')) {
+    var d = row.querySelector('.desc');
+    d.value = ''; row._picked = ''; row._img = '';
+    clearTimeout(row._sgTimer); row._sgSeq = (row._sgSeq || 0) + 1;
+    sgClose(row); syncClear(row); renderItemPhoto(row); d.focus();
+    return;
+  }
   if (t.classList.contains('rm')) {
     row.parentNode.removeChild(row);
     if (!$('items').children.length) addItemRow(); else updateItemsUi();
   }
 });
 // Quote-line photo: one photo per line. If several are picked, the first goes on this line and each extra one
-// gets its own new line right below (same category, description left blank to fill in), up to MAX_ITEMS lines.
+// gets its own new line right below (item and note left blank to fill in), up to MAX_ITEMS lines.
 var itemPhotoJobs = 0;
 $('items').addEventListener('change', function (e) {
   if (!e.target.classList || !e.target.classList.contains('phfile')) return;
@@ -960,7 +995,7 @@ $('items').addEventListener('change', function (e) {
     downscale(f).then(function (d) {
       var target = row;
       if (added > 0) {
-        target = addItemRow({ category: row.querySelector('.cat').value, description: '' });
+        target = addItemRow();
         if (!target) { skipped++; return; }
         after.parentNode.insertBefore(target, after.nextSibling);
       }
@@ -1024,7 +1059,9 @@ function sgRender(row, res) {
     if (sug.length) h.push('<div class="sg-dym">Did you mean ' + sug.map(function (x) { return '<button type="button" class="dym" data-q="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>');
     if (items.length && res.closest) h.push('<div class="sg-h">Closest items</div>');
     items.forEach(function (it, i) {
-      h.push('<button type="button" class="opt" role="option" aria-selected="false" data-i="' + i + '">' +
+      var im = it.img && ITEM_IMG_RE.test(it.img);
+      h.push('<button type="button" class="opt' + (im ? ' has-img' : '') + '" role="option" aria-selected="false" data-i="' + i + '">' +
+        (im ? '<img class="oimg" src="' + esc(it.img) + '" alt="" loading="lazy">' : '') +
         '<span class="on"><span>' + esc(it.name) + '</span><span class="chip ' + catClass(it.category) + '">' + esc(it.category) + '</span></span>' +
         (it.description ? '<span class="od">' + esc(it.description) + '</span>' : '') + '</button>');
     });
@@ -1068,8 +1105,9 @@ function itemPick(row, i) {
   var text = dup ? it.description : it.name + (it.description ? ' \u2013 ' + it.description : '');
   desc.value = text.slice(0, 500);
   row._picked = desc.value.replace(/\s+/g, ' ').trim();
-  var cat = row.querySelector('.cat');
-  if (!cat.value && it.category) cat.value = it.category;
+  row._img = it.img && ITEM_IMG_RE.test(it.img) ? it.img : '';
+  syncClear(row);
+  renderItemPhoto(row);
   clearTimeout(row._sgTimer);
   row._sgSeq = (row._sgSeq || 0) + 1;
   sgClose(row);
@@ -1078,6 +1116,9 @@ function itemPick(row, i) {
 $('items').addEventListener('input', function (e) {
   if (!e.target.classList.contains('desc')) return;
   var row = e.target.closest('.item');
+  syncClear(row);
+  // Typed over a picked item: its product photo no longer applies (adding words after it is fine).
+  if (row._img && e.target.value.replace(/\s+/g, ' ').trim().indexOf(row._picked || '\u0000') !== 0) { row._img = ''; renderItemPhoto(row); }
   clearTimeout(row._sgTimer);
   row._sgTimer = setTimeout(function () { itemSearchNow(row); }, ITEM_SEARCH_DEBOUNCE);
 });
@@ -1089,12 +1130,16 @@ $('items').addEventListener('keydown', function (e) {
     e.preventDefault();
     sgSetActive(row, (row._sgActive == null || row._sgActive < 0) ? (e.key === 'ArrowDown' ? 0 : -1) : row._sgActive + (e.key === 'ArrowDown' ? 1 : -1));
   } else if (e.key === 'Enter') {
+    e.preventDefault();                       // never save the note from Enter in a search bar
     if (!open) return;
-    e.preventDefault();                       // never save the note from Enter while the list is open
     if (row._sgActive >= 0) itemPick(row, row._sgActive); else sgClose(row);
   } else if (e.key === 'Escape') {
     if (open) { e.preventDefault(); sgClose(row); }
   }
+});
+// Enter in a line's note box just closes the keyboard (never saves the whole note by accident).
+$('items').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('inote')) { e.preventDefault(); e.target.blur(); }
 });
 // Tapping a match must not blur the field first (keeps the phone keyboard steady); the click then picks it.
 $('items').addEventListener('mousedown', function (e) { if (e.target.closest && e.target.closest('.sg')) e.preventDefault(); });
@@ -1365,11 +1410,11 @@ function fillForm(r, mode) {
   resetForm(true);
   store = r.store || store;
   renderStore();
-  var items = (r.items || []).filter(function (it) { return it && (it.text || it.photo); });
+  var items = (r.items || []).filter(itemFilled);
   if (items.length) {
     $('items').innerHTML = '';
     items.forEach(function (it) {
-      addItemRow({ category: it.category || '', description: it.description != null ? it.description : it.text, photo: it.photo });
+      addItemRow(it);
     });
   }
   var notes = splitNotes(r.note);
@@ -1548,10 +1593,15 @@ $('noteForm').addEventListener('submit', function (e) {
       address: $('address').value,
       store: store,
       items: itemRows.map(function (row) {
+        var item = row.querySelector('.desc').value, note = row.querySelector('.inote').value;
         return {
-          category: row.querySelector('.cat').value || 'Other',
-          description: row.querySelector('.desc').value,
-          photoUrl: row._photo ? row._photo.url : ''
+          item: item,
+          note: note,
+          photoUrl: row._photo ? row._photo.url : '',
+          img: row._img || '',
+          // only read by a not-yet-updated (v13) server, so nothing is lost if the page goes live first
+          category: 'Other',
+          description: [item.trim(), note.trim()].filter(Boolean).join(' \u2013 ')
         };
       }),
       status: getStatus(),
@@ -1601,6 +1651,20 @@ function firstPhoto(r) {
   var ph = (r.photos || []).filter(function (u) { return thumbUrl(u); });
   return ph[0] || '';
 }
+function firstProductImg(r) {
+  var items = r.items || [];
+  for (var i = 0; i < items.length; i++) if (items[i] && items[i].img && ITEM_IMG_RE.test(items[i].img)) return items[i].img;
+  return '';
+}
+// One saved line for the card / shared view: product photo, item # / name, note, customer photo.
+function itemLineHtml(it) {
+  var item = lineItemText(it), note = it.note || '';
+  var img = it.img && ITEM_IMG_RE.test(it.img) ? '<a class="thumb pthumb" href="' + esc(it.img) + '" target="_blank" rel="noopener" aria-label="Product photo"><img src="' + esc(it.img) + '" alt="Product photo" loading="lazy"></a>' : '';
+  return '<li>' + img + '<div class="txt"><span class="it-item">' + esc(item || (note ? '' : it.photo ? 'Photo' : 'Item')) + '</span>' +
+    (note ? '<span class="it-note">' + esc(note) + '</span>' : '') + '</div>' +
+    (it.photo ? photoLink(it.photo, (item || 'Item') + ' photo') : '') + '</li>';
+}
+function itemFilled(it) { return it && (it.text || it.item || it.note || it.photo); }
 
 // Collapsed one-glance row.
 function summaryHtml(r, idx, status, items, notes) {
@@ -1608,7 +1672,7 @@ function summaryHtml(r, idx, status, items, notes) {
   items.forEach(function (it) { if (it.category && cats.indexOf(it.category) === -1) cats.push(it.category); });
   var meta = [r.timestamp, r.store, r.enteredBy ? 'by ' + r.enteredBy : ''].filter(Boolean).map(esc).join(' \u00b7 ');
   var preview = notes.length ? notes[0].replace(/\s+/g, ' ') : '';
-  var ph = firstPhoto(r);
+  var ph = firstPhoto(r), pimg = ph ? '' : firstProductImg(r);
   var vcount = (r.voice || []).length;
   return '<div class="row-sum" role="button" tabindex="0" aria-expanded="false" aria-label="' + esc(r.name) + ', show details">' +
     '<div class="rs-main">' +
@@ -1621,7 +1685,7 @@ function summaryHtml(r, idx, status, items, notes) {
           (cats.length > 2 ? '<span>+' + (cats.length - 2) + '</span>' : '') : '') +
         (vcount ? '<span class="chip mic" aria-label="' + vcount + ' voice notes">\uD83C\uDF99 ' + vcount + '</span>' : '') + '</div>' : '') +
     '</div>' +
-    (ph ? '<img class="rs-thumb" src="' + esc(thumbUrl(ph)) + '" alt="" loading="lazy">' : '') +
+    (ph ? '<img class="rs-thumb" src="' + esc(thumbUrl(ph)) + '" alt="" loading="lazy">' : pimg ? '<img class="rs-thumb" src="' + esc(pimg) + '" alt="" loading="lazy">' : '') +
     '<span class="chev" aria-hidden="true">' + ICON_CHEV + '</span>' +
   '</div>';
 }
@@ -1630,7 +1694,7 @@ function renderList(rows, info) {
   listRows = rows || [];
   $('listInfo').textContent = info;
   $('list').innerHTML = listRows.map(function (r, idx) {
-    var items = (r.items || []).filter(function (it) { return it && (it.text || it.photo); });
+    var items = (r.items || []).filter(itemFilled);
     var notes = splitNotes(r.note);
     var photos = (r.photos || []).filter(Boolean);
     var voice = r.voice || [];
@@ -1651,12 +1715,7 @@ function renderList(rows, info) {
       (links ? '<div class="links">' + links + '</div>' : '') +
       (r.address ? '<div class="addr">' + esc(r.address) + '</div>' : '') +
       (items.length ? '<div class="nc-sec"><h3>Quote items (' + items.length + ')</h3><ul class="items">' +
-        items.map(function (it) {
-          var chip = it.category ? '<span class="chip ' + catClass(it.category) + '">' + esc(it.category) + '</span>' : '';
-          var desc = it.category ? it.description : it.text;
-          return '<li><div class="txt">' + chip + esc(desc) + '</div>' +
-            (it.photo ? photoLink(it.photo, (it.category || 'Item') + ' photo') : '') + '</li>';
-        }).join('') + '</ul></div>' : '') +
+        items.map(itemLineHtml).join('') + '</ul></div>' : '') +
       (notes.length ? '<div class="nc-sec notes-txt"><h3>Notes</h3>' +
         notes.map(function (n, i) { return '<p>' + (notes.length > 1 ? (i + 1) + '. ' : '') + esc(n) + '</p>'; }).join('') + '</div>' : '') +
       (voice.length ? '<div class="nc-sec"><h3>Voice notes (' + voice.length + ')</h3><ul class="voice">' +
@@ -1730,10 +1789,13 @@ function shareText(r) {
   if (r.phone) lines.push(r.phone);
   if (r.email) lines.push(r.email);
   if (r.address) lines.push(r.address);
-  var items = (r.items || []).filter(function (it) { return it && (it.text || it.photo); });
+  var items = (r.items || []).filter(itemFilled);
   if (items.length) {
     lines.push('', 'Quote items:');
-    items.forEach(function (it) { lines.push('- ' + it.text + (it.photo ? ' (photo: ' + it.photo + ')' : '')); });
+    items.forEach(function (it) {
+      var t = [lineItemText(it), it.note].filter(Boolean).join(' \u2013 ') || 'Item';
+      lines.push('- ' + t + (it.photo ? ' (photo: ' + it.photo + ')' : '') + (it.img ? ' (product photo: ' + it.img + ')' : ''));
+    });
   }
   if (r.note) lines.push('', 'Notes:', r.note);
   if (r.voice && r.voice.length) {
@@ -1750,7 +1812,7 @@ function shareText(r) {
 function appUrl() { return location.href.split(/[?#]/)[0]; }
 function shareUrl(tok) { return appUrl() + '?s=' + tok; }
 function shareSummary(r) {
-  var n = (r.items || []).filter(function (it) { return it && (it.text || it.photo); }).length;
+  var n = (r.items || []).filter(itemFilled).length;
   return r.name + ' \u2013 ' + n + ' item' + (n === 1 ? '' : 's');
 }
 function sendLink(r) {
@@ -2149,7 +2211,7 @@ function renderShared(n) {
   if (c.length) h.push('<p style="margin:8px 0 0">' + c.join('<br>') + '</p>');
   function a(u, label) { return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(label) + '</a>'; }
   if (n.items && n.items.length) {
-    h.push('<h3>Quote items</h3><ul>' + n.items.map(function (it) { return '<li>' + esc(it.text) + (it.photo ? ' \u00b7 ' + a(it.photo, 'photo') : '') + '</li>'; }).join('') + '</ul>');
+    h.push('<h3>Quote items</h3><ul class="items">' + n.items.filter(itemFilled).map(itemLineHtml).join('') + '</ul>');
   }
   if (n.note) h.push('<h3>Notes</h3><p class="pre">' + esc(n.note) + '</p>');
   if (n.voice && n.voice.length) {
