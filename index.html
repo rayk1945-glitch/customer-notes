@@ -109,7 +109,7 @@
   }
 
   /* Quote items */
-  .item { display: grid; grid-template-columns: 1fr auto 44px; grid-template-areas: "cat ph rm" "desc desc desc" "th th th";
+  .item { display: grid; grid-template-columns: 1fr auto 44px; grid-template-areas: "cat ph rm" "desc desc desc" "sg sg sg" "th th th";
           gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fafbfc; }
   .item + .item { margin-top: 10px; }
   .item select { grid-area: cat; }
@@ -117,10 +117,26 @@
   .item input[type=file] { display: none; }
   .item .ph { grid-area: ph; padding: 0 12px; }
   .item .rm { grid-area: rm; }
+  /* Item search suggestions (v13) */
+  .item .sg { grid-area: sg; background: #fff; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden;
+              box-shadow: 0 6px 18px rgba(16, 24, 40, .10); max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .item .sg:empty { display: none; }
+  .sg .sg-h { padding: 8px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .sg .sg-dym { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 4px; align-items: center; font-size: 14px; color: var(--muted); }
+  .sg .sg-dym button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: #f7f8fa;
+                       font-size: 14px; font-weight: 600; color: #1f2937; }
+  .sg .opt { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid #eef0f3; background: #fff; padding: 10px 12px;
+             min-height: 48px; color: var(--text); font: inherit; cursor: pointer; }
+  .sg .opt:first-child { border-top: 0; }
+  .sg .opt.active, .sg .opt:hover { background: #eef2f7; }
+  .sg .opt .on { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; word-break: break-word; }
+  .sg .opt .on .chip { margin: 0 0 0 auto; flex: none; font-size: 11px; padding: 2px 8px; }
+  .sg .opt .od { font-size: 14px; color: #4b5563; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sg .sg-msg { padding: 10px 12px; font-size: 14px; color: var(--muted); }
   .item .ithumb { grid-area: th; display: flex; align-items: center; gap: 10px; }
   .item .ithumb:empty { display: none; }
   @media (min-width: 600px) {
-    .item { grid-template-columns: 140px 1fr auto 44px; grid-template-areas: "cat desc ph rm" "th th th th"; }
+    .item { grid-template-columns: 140px 1fr auto 44px; grid-template-areas: "cat desc ph rm" "sg sg sg sg" "th th th th"; }
   }
 
   /* Photo thumbs (form) */
@@ -305,7 +321,7 @@
 <header>
   <div class="head-in">
     <div class="head-row">
-      <h1>Customer Notes <span class="ver" title="App version">v11</span></h1>
+      <h1>Customer Notes <span class="ver" title="App version">v13</span></h1>
       <div id="who" class="who hidden">
         <span id="whoName" class="who-name"></span>
         <button id="accountBtn" type="button" class="pill">Account</button>
@@ -483,6 +499,7 @@
         <button id="addItem" class="pill dashed block add-row" type="button">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <span>Add item</span></button>
+        <p id="itemsHint" class="hint"></p>
       </div>
 
       <div class="card">
@@ -537,7 +554,7 @@
 
 <script>
 // ---- API (Apps Script JSON endpoint; text/plain body avoids a CORS preflight) ----
-var API_URL = 'https://script.google.com/macros/s/AKfycbzP-QSWN-_iBFi7OK0pUEQrpXxyMDg2s7uuz_-4lwq34u9iL9f0OQzRVvoLumRjLizz/exec';
+var API_URL = 'https://script.google.com/macros/s/AKfycbx_YLr5USYOdbuk4NW7KGPhwdtSQdMdtH-s-xQ7-vtAxlryH2CijMJw4IqpthF4IKSD/exec';
 var SESSION_KEY = 'esSession';
 var PIN_RE = /^\d{4,10}$/;
 var NAME_RE = /^[A-Za-z0-9 ]{2,30}$/;
@@ -848,6 +865,7 @@ $('thumbs').addEventListener('click', function (e) {
 renderThumbs();
 
 // ---- Quote items (1..50 rows: Category + Description + optional photo) ----
+var sgSeq = 0;
 function addItemRow(it) {
   var box = $('items');
   if (box.children.length >= MAX_ITEMS) return null;
@@ -858,7 +876,8 @@ function addItemRow(it) {
     return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
   }).join('');
   row.innerHTML = '<select class="cat" aria-label="Category">' + opts + '</select>' +
-    '<input class="desc" maxlength="500" placeholder="Style / color / size" aria-label="Item description">' +
+    '<input class="desc" maxlength="500" placeholder="Item # or name (or type anything)" aria-label="Item description" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sg' + (++sgSeq) + '">' +
+    '<div class="sg" id="sg' + sgSeq + '" role="listbox" aria-label="Matching items"></div>' +
     '<button type="button" class="pill ph" aria-label="Take photo or upload">' + ICON_CAM + '<span>Photo / Upload</span></button>' +
     '<input type="file" class="phfile" accept="image/*" multiple tabindex="-1" aria-hidden="true">' +
     '<button type="button" class="xbtn rm" aria-label="Remove item">' + ICON_X + '</button>' +
@@ -954,6 +973,152 @@ $('items').addEventListener('change', function (e) {
   next();
 });
 resetItems();
+
+// ---- Item search in quote lines (v13): ranked matches from the price-free item list; free text still works ----
+var ITEM_SEARCH_DEBOUNCE = 250;
+var itemsReady = null;            // null = unknown, false = not set up on the server, true = ready
+var itemSearchCache = {};         // query (lower case) -> result
+function itemApi(action, data) {
+  var d = data || {};
+  if (shareEdit) d.editToken = shareEdit.editToken;
+  return api(action, d, 20000);
+}
+function fmtItemsDate(built) {
+  var m = String(built || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return built || '';
+  var mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
+  return mon + ' ' + Number(m[3]) + ', ' + m[1];
+}
+function loadItemsInfo() {
+  itemApi('itemsInfo').then(function (r) {
+    itemsReady = !!(r && r.ready);
+    $('itemsHint').textContent = itemsReady ? 'Item search: type an item # or name. Items updated ' + fmtItemsDate(r.built) + '.' : '';
+  }).catch(function () { /* hint stays empty; search still tries */ });
+}
+function sgClose(row) {
+  if (!row) return;
+  var box = row.querySelector('.sg');
+  box.innerHTML = '';
+  row._sgItems = []; row._sgActive = -1;
+  row.querySelector('.desc').setAttribute('aria-expanded', 'false');
+}
+function sgSetActive(row, i) {
+  var opts = row.querySelectorAll('.sg .opt');
+  if (!opts.length) return;
+  i = (i + opts.length) % opts.length;
+  row._sgActive = i;
+  for (var k = 0; k < opts.length; k++) {
+    opts[k].classList.toggle('active', k === i);
+    opts[k].setAttribute('aria-selected', String(k === i));
+  }
+  opts[i].scrollIntoView({ block: 'nearest' });
+}
+function sgRender(row, res) {
+  var box = row.querySelector('.sg'), desc = row.querySelector('.desc');
+  var items = (res && res.items) || [], sug = (res && res.suggestions) || [];
+  row._sgItems = items; row._sgActive = -1;
+  if (!items.length && !sug.length) {
+    box.innerHTML = res && res.q ? '<div class="sg-msg">No matching items. Keep typing, or just use your own words.</div>' : '';
+  } else {
+    var h = [];
+    if (sug.length) h.push('<div class="sg-dym">Did you mean ' + sug.map(function (x) { return '<button type="button" class="dym" data-q="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>');
+    if (items.length && res.closest) h.push('<div class="sg-h">Closest items</div>');
+    items.forEach(function (it, i) {
+      h.push('<button type="button" class="opt" role="option" aria-selected="false" data-i="' + i + '">' +
+        '<span class="on"><span>' + esc(it.name) + '</span><span class="chip ' + catClass(it.category) + '">' + esc(it.category) + '</span></span>' +
+        (it.description ? '<span class="od">' + esc(it.description) + '</span>' : '') + '</button>');
+    });
+    box.innerHTML = h.join('');
+  }
+  desc.setAttribute('aria-expanded', String(!!box.innerHTML));
+  if (box.innerHTML) sgReveal(row);
+}
+// Keep the list above the sticky Save bar (and the phone keyboard) so every match can be tapped.
+function sgReveal(row) {
+  var box = row.querySelector('.sg');
+  var r = box.getBoundingClientRect();
+  var vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  var bar = document.querySelector('.bar');
+  var limit = vh - (bar ? bar.getBoundingClientRect().height : 0) - 8;
+  var desc = row.querySelector('.desc').getBoundingClientRect();
+  var need = Math.min(r.bottom - limit, desc.top - 70);    // never scroll the typed field out of view under the header
+  if (need > 0) window.scrollBy(0, need);
+}
+function itemSearchNow(row) {
+  var desc = row.querySelector('.desc');
+  var q = desc.value.replace(/\s+/g, ' ').trim();
+  if (itemsReady === false || q.replace(/[^A-Za-z0-9]/g, '').length < 2 || q === row._picked) { sgClose(row); return; }
+  if (q.length > 100) q = q.slice(0, 100);
+  var key = q.toLowerCase();
+  var seq = row._sgSeq = (row._sgSeq || 0) + 1;
+  if (itemSearchCache[key]) { sgRender(row, itemSearchCache[key]); return; }
+  itemApi('itemSearch', { q: q }).then(function (res) {
+    if (res && res.ready === false) { itemsReady = false; sgClose(row); return; }
+    itemSearchCache[key] = res;
+    if (seq !== row._sgSeq || document.activeElement !== desc) return;   // a newer search started, or the user left
+    sgRender(row, res);
+  }).catch(function () { if (seq === row._sgSeq) sgClose(row); });
+}
+function itemPick(row, i) {
+  var it = row._sgItems && row._sgItems[i];
+  if (!it) return;
+  var desc = row.querySelector('.desc');
+  var n = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+  var dup = it.description && n(it.description).indexOf(n(it.name)) === 0;   // description already starts with the item #
+  var text = dup ? it.description : it.name + (it.description ? ' \u2013 ' + it.description : '');
+  desc.value = text.slice(0, 500);
+  row._picked = desc.value.replace(/\s+/g, ' ').trim();
+  var cat = row.querySelector('.cat');
+  if (!cat.value && it.category) cat.value = it.category;
+  clearTimeout(row._sgTimer);
+  row._sgSeq = (row._sgSeq || 0) + 1;
+  sgClose(row);
+  desc.focus();
+}
+$('items').addEventListener('input', function (e) {
+  if (!e.target.classList.contains('desc')) return;
+  var row = e.target.closest('.item');
+  clearTimeout(row._sgTimer);
+  row._sgTimer = setTimeout(function () { itemSearchNow(row); }, ITEM_SEARCH_DEBOUNCE);
+});
+$('items').addEventListener('keydown', function (e) {
+  if (!e.target.classList.contains('desc')) return;
+  var row = e.target.closest('.item'), open = !!row.querySelector('.sg').innerHTML;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!open) return;
+    e.preventDefault();
+    sgSetActive(row, (row._sgActive == null || row._sgActive < 0) ? (e.key === 'ArrowDown' ? 0 : -1) : row._sgActive + (e.key === 'ArrowDown' ? 1 : -1));
+  } else if (e.key === 'Enter') {
+    if (!open) return;
+    e.preventDefault();                       // never save the note from Enter while the list is open
+    if (row._sgActive >= 0) itemPick(row, row._sgActive); else sgClose(row);
+  } else if (e.key === 'Escape') {
+    if (open) { e.preventDefault(); sgClose(row); }
+  }
+});
+// Tapping a match must not blur the field first (keeps the phone keyboard steady); the click then picks it.
+$('items').addEventListener('mousedown', function (e) { if (e.target.closest && e.target.closest('.sg')) e.preventDefault(); });
+$('items').addEventListener('click', function (e) {
+  var opt = e.target.closest && e.target.closest('.sg .opt, .sg .dym');
+  if (!opt) return;
+  var row = opt.closest('.item');
+  if (opt.classList.contains('dym')) {
+    var desc = row.querySelector('.desc');
+    desc.value = opt.getAttribute('data-q');
+    desc.focus();
+    itemSearchNow(row);
+    return;
+  }
+  itemPick(row, Number(opt.getAttribute('data-i')));
+});
+$('items').addEventListener('focusout', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('desc')) return;
+  var row = e.target.closest('.item');
+  setTimeout(function () {
+    if (row.contains(document.activeElement) && document.activeElement.closest('.sg')) return;
+    if (document.activeElement !== row.querySelector('.desc')) { clearTimeout(row._sgTimer); sgClose(row); }
+  }, 200);
+});
 
 // ---- Voice notes (1..40 clips: audio + live transcript) ----
 function fmtDur(sec) {
@@ -1730,6 +1895,7 @@ function showApp() {
   $('tabs').classList.remove('hidden');
   $('who').classList.remove('hidden');
   $('whoName').textContent = session.name;
+  loadItemsInfo();
 }
 function showAuth(msg) {
   $('appMain').classList.add('hidden');
@@ -2036,6 +2202,7 @@ $('shareEditForm').addEventListener('submit', function (e) {
     b.disabled = false;
     $('shareEditPin').value = '';
     shareEdit = { editToken: res.editToken, s: sharedTok };
+    loadItemsInfo();
     document.body.classList.add('share-edit');
     $('sharedView').classList.add('hidden');
     $('appMain').classList.remove('hidden');
