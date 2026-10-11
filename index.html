@@ -246,6 +246,7 @@
   ul.voice li + li { border-top: 1px dashed #eef0f3; }
   ul.voice .vline { display: flex; align-items: center; gap: 10px; }
   ul.voice .vline .pill { min-height: 40px; padding: 0 14px; }
+  ul.voice audio.vplay { width: 100%; height: 44px; margin: 6px 0 2px; display: block; }
   ul.voice .vt { margin-top: 4px; font-size: 16px; white-space: pre-wrap; word-wrap: break-word; }
   @media (prefers-reduced-motion: reduce) { .rec-live .dot { animation: none; } }
   .actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -1229,6 +1230,13 @@ $('noteForm').addEventListener('submit', function (e) {
 // ---- Recent / Search ----
 function catClass(c) { return 'c-' + String(c || 'other').toLowerCase().replace(/[^a-z]/g, ''); }
 
+function audioPlayer(u, i) {
+  var id = driveId(u);
+  if (!id) return '<a class="pill" href="' + esc(u) + '" target="_blank" rel="noopener">\u25b6 Play</a>';
+  var src = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(id);
+  return '<audio class="vplay" controls preload="none" src="' + esc(src) + '" aria-label="Voice note ' + (i + 1) + '"></audio>';
+}
+
 function photoLink(u, alt) {
   var t = thumbUrl(u);
   if (!t) return '<a class="plink" href="' + esc(u) + '" target="_blank" rel="noopener">photo</a>';
@@ -1303,9 +1311,9 @@ function renderList(rows, info) {
       (voice.length ? '<div class="nc-sec"><h3>Voice notes (' + voice.length + ')</h3><ul class="voice">' +
         voice.map(function (v, i) {
           return '<li><div class="vline">' +
-            (v.url ? '<a class="pill" href="' + esc(v.url) + '" target="_blank" rel="noopener" aria-label="Play voice note ' + (i + 1) + '">▶ Play</a>' : '') +
             '<span class="nc-meta">Voice ' + (i + 1) + (v.duration ? ' · ' + esc(v.duration) : '') +
               (v.lang && LANG_BY_TAG[v.lang] ? ' · ' + VOICE_LANGS[LANG_BY_TAG[v.lang]].label : '') + '</span></div>' +
+            (v.url ? audioPlayer(v.url, i) : '') +
             (v.transcript ? '<div class="vt">' + esc(v.transcript) + '</div>' : '') + '</li>';
         }).join('') + '</ul></div>' : '') +
       (photos.length ? '<div class="nc-sec"><h3>Photos</h3><div class="gphotos">' +
